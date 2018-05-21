@@ -9,14 +9,12 @@ extern crate time;
 #[macro_use]
 extern crate serde_derive;
 
-use argparse::{ArgumentParser, Store, StoreOption, StoreTrue};
+use argparse::{ArgumentParser, Store, StoreOption};
 use rand::Rng;
-use serde_json::Error;
 use std::fs::File;
 use std::fs::OpenOptions;
 use std::io::BufRead;
 use std::io::BufReader;
-use std::path::Path;
 use std::path::PathBuf;
 use std::str::FromStr;
 use time::Duration;
@@ -121,7 +119,7 @@ number",
             do_list();
         }
         Command::Add => {
-            do_add(arg, priority, deadline);
+            do_add(arg, priority, &deadline);
         }
         Command::Started => {
             do_set_progress(&arg, Status::Started);
@@ -175,11 +173,11 @@ impl Data {
     }
 
     fn remove_by_id(&mut self, id: &str) {
-        self.entries.retain(|x| &x.id != id);
+        self.entries.retain(|x| x.id != id);
     }
 
     fn print(&self) {
-        if self.entries.len() == 0 {
+        if self.entries.is_empty() {
             println!("Nothing todo, woooooo!");
         }
         for entry in &self.entries {
@@ -240,10 +238,10 @@ struct Entry {
 impl Entry {
     fn new(id: String, task: String, priority: u8, mb_deadline: Option<DateTime<Local>>) -> Self {
         Entry {
-            id: id,
-            task: task,
+            id,
+            task,
             deadline: mb_deadline,
-            priority: priority,
+            priority,
             status: Status::NotStarted,
         }
     }
@@ -286,9 +284,9 @@ impl Entry {
     }
 }
 
-const DATA_FOLDER: &'static str = ".todo.d";
-const DATA_FILENAME: &'static str = "data.json";
-const NOUNS_FILENAME: &'static str = "nouns.txt";
+const DATA_FOLDER:    &str = ".todo.d";
+const DATA_FILENAME:  &str = "data.json";
+const NOUNS_FILENAME: &str = "nouns.txt";
 
 fn data_folder() -> PathBuf {
     match env::home_dir() {
@@ -329,7 +327,7 @@ fn load_data() -> IOResult<Data> {
 }
 
 fn load_data_catch() -> Data {
-    load_data().unwrap_or(Data::new())
+    load_data().unwrap_or_else(|_| Data::new())
 }
 
 fn load_nouns() -> IOResult<Vec<String>> {
@@ -369,7 +367,7 @@ fn concretise_time(vt: &VagueTime) -> DateTime<Local> {
         Evening => Local::today().and_hms(23, 00, 0),
         NextWeek => t0 + Duration::days(7),
         Day(d) => Local::today()
-            .with_day(u32::from(d.clone()))
+            .with_day(u32::from(*d))
             .unwrap()
             .and_hms(15, 00, 0),
     }
@@ -378,7 +376,11 @@ fn concretise_time(vt: &VagueTime) -> DateTime<Local> {
 fn pick_name(data: &Data) -> String {
     // TODO error handle
     let nouns = load_nouns().unwrap();
-    let mut noun = "";
+    let mut noun;
+
+    // We know this will probably terminate
+    // stop worrying guys
+    #[allow(while_immutable_condition)]
     while {
         noun = rand::thread_rng().choose(&nouns).unwrap();
 
@@ -389,7 +391,7 @@ fn pick_name(data: &Data) -> String {
     noun.to_owned()
 }
 
-fn do_add(task: String, priority: u8, deadline_vague: Option<VagueTime>) {
+fn do_add(task: String, priority: u8, deadline_vague: &Option<VagueTime>) {
     let mut data = load_data_catch();
     let id = pick_name(&data);
     println!("Adding {} - '{}'", id, task);
@@ -405,7 +407,7 @@ fn do_set_progress(id: &str, progress: Status) {
     let mut data = load_data_catch();
     {
         // Scope for mutable borrow
-        match data.find_entry_mut(id.clone()) {
+        match data.find_entry_mut(id) {
             Some(entry) => {
                 entry.status = progress;
             }
