@@ -1,0 +1,14 @@
+[package]
+name = "todo"
+version = "0.1.0"
+authors = ["Daniel Slocombe <ds4314@ic.ac.uk>"]
+
+[dependencies]
+argparse = "0.2.1"
+serde = "1.0.17"
+serde_json = "1.0.17"
+serde_derive = "1.0.17"
+rand = "0.4"
+chrono = { version = "0.4", features = ["serde"] }
+time = "0.1"
+colored = "1.6"
