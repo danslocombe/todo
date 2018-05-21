@@ -28,8 +28,6 @@ use colored::*;
 
 use chrono::prelude::*;
 
-struct ParseError {}
-
 enum VagueTime {
     Tomorrow,
     Today,
@@ -39,7 +37,7 @@ enum VagueTime {
 }
 
 impl FromStr for VagueTime {
-    type Err = ParseError;
+    type Err = ();
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         use VagueTime::*;
@@ -60,6 +58,23 @@ impl FromStr for VagueTime {
     }
 }
 
+impl VagueTime {
+    fn concretise(&self) -> DateTime<Local> {
+        use VagueTime::*;
+        let t0 = Local::now();
+        match self {
+            Tomorrow => t0 + Duration::days(1),
+            Today => Local::today().and_hms(23, 30, 0),
+            Evening => Local::today().and_hms(23, 00, 0),
+            NextWeek => t0 + Duration::days(7),
+            Day(d) => Local::today()
+                .with_day(u32::from(*d))
+                .unwrap()
+                .and_hms(15, 00, 0),
+        }
+    }
+}
+
 enum Command {
     List,
     Add,
@@ -70,7 +85,7 @@ enum Command {
 }
 
 impl FromStr for Command {
-    type Err = ParseError;
+    type Err = ();
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         use Command::*;
@@ -93,7 +108,6 @@ fn main() {
     let mut priority: u8 = 0;
     {
         let mut ap = ArgumentParser::new();
-        //ap.set_name(name);
         ap.set_description(
             "Something to help me organise\nSupports commands:
 list\n - add \"Text of task\"\n - start taskname
@@ -247,12 +261,14 @@ impl Entry {
     }
 
     fn format(&self) -> String {
+
         let deadline_urgent = match self.deadline {
             Some(x) => x.date() <= Local::now().date(),
             _ => false,
         };
         let status_urgent = self.status.is_urgent();
         let urgent = deadline_urgent && status_urgent;
+
         let deadline_str = match self.deadline {
             Some(deadline) => {
                 let str = format!("{}", deadline.format("\n\t Deadline: %d-%m %H:%M")).to_owned();
@@ -358,21 +374,6 @@ fn do_list() {
     data.print();
 }
 
-fn concretise_time(vt: &VagueTime) -> DateTime<Local> {
-    use VagueTime::*;
-    let t0 = Local::now();
-    match vt {
-        Tomorrow => t0 + Duration::days(1),
-        Today => Local::today().and_hms(23, 30, 0),
-        Evening => Local::today().and_hms(23, 00, 0),
-        NextWeek => t0 + Duration::days(7),
-        Day(d) => Local::today()
-            .with_day(u32::from(*d))
-            .unwrap()
-            .and_hms(15, 00, 0),
-    }
-}
-
 fn pick_name(data: &Data) -> String {
     // TODO error handle
     let nouns = load_nouns().unwrap();
@@ -395,16 +396,19 @@ fn do_add(task: String, priority: u8, deadline_vague: &Option<VagueTime>) {
     let mut data = load_data_catch();
     let id = pick_name(&data);
     println!("Adding {} - '{}'", id, task);
-    let deadline = deadline_vague.as_ref().map(concretise_time);
+
+    let deadline = deadline_vague.as_ref().map(|x| x.concretise());
     let new_entry = Entry::new(id, task, priority, deadline);
+
     data.add_entry(new_entry);
     data.print();
+
     save_data(&data).unwrap();
 }
 
 fn do_set_progress(id: &str, progress: Status) {
-    println!("Resolving '{}'", id);
     let mut data = load_data_catch();
+    println!("Resolving '{}'", id);
     {
         // Scope for mutable borrow
         match data.find_entry_mut(id) {
@@ -422,9 +426,10 @@ fn do_set_progress(id: &str, progress: Status) {
 }
 
 fn do_remove(id: &str) {
-    println!("Removing '{}'", id);
     let mut data = load_data_catch();
+    println!("Removing '{}'", id);
     data.remove_by_id(id);
+
     data.print();
     save_data(&data).unwrap();
 }
