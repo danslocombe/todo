@@ -1,30 +1,30 @@
 extern crate argparse;
-extern crate serde;
-extern crate serde_json;
-extern crate rand;
 extern crate chrono;
 extern crate colored;
+extern crate rand;
+extern crate serde;
+extern crate serde_json;
 extern crate time;
 
 #[macro_use]
 extern crate serde_derive;
 
-use std::str::FromStr;
+use argparse::{ArgumentParser, Store, StoreOption, StoreTrue};
+use rand::Rng;
+use serde_json::Error;
 use std::fs::File;
 use std::fs::OpenOptions;
-use std::path::PathBuf;
-use std::io::BufReader;
 use std::io::BufRead;
-use argparse::{ArgumentParser, StoreTrue, Store, StoreOption};
-use serde_json::Error;
+use std::io::BufReader;
 use std::path::Path;
+use std::path::PathBuf;
+use std::str::FromStr;
 use time::Duration;
-use rand::Rng;
 
-use std::io::Result as IOResult;
-use std::io::Read;
-use std::io::Write;
 use std::env;
+use std::io::Read;
+use std::io::Result as IOResult;
+use std::io::Write;
 
 use colored::*;
 
@@ -44,23 +44,21 @@ impl FromStr for VagueTime {
     type Err = ParseError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-		use VagueTime::*;
-		match s {
-			"tomorrow" => Ok(Tomorrow),
-			"today"  => Ok(Today),
-			"tonight"  => Ok(Today),
-			"evening"  => Ok(Evening),
-			"week"  => Ok(NextWeek),
-			"next week"  => Ok(NextWeek),
-			d => {
-                Ok(match u8::from_str(d) {
-                    Ok(x) => Day(x),
-                    Err(e) => {
-                        panic!("I don't understand the date you asked for!");
-                    }
-                })
-            }
-		}
+        use VagueTime::*;
+        match s {
+            "tomorrow" => Ok(Tomorrow),
+            "today" => Ok(Today),
+            "tonight" => Ok(Today),
+            "evening" => Ok(Evening),
+            "week" => Ok(NextWeek),
+            "next week" => Ok(NextWeek),
+            d => Ok(match u8::from_str(d) {
+                Ok(x) => Day(x),
+                Err(_e) => {
+                    panic!("I don't understand the date you asked for!");
+                }
+            }),
+        }
     }
 }
 
@@ -77,35 +75,36 @@ impl FromStr for Command {
     type Err = ParseError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-		use Command::*;
-		Ok(match s {
+        use Command::*;
+        Ok(match s {
             "" => List,
-			"list" => List,
-			"add"  => Add,
-			"start"  => Started,
-			"resolve"  => Resolve,
-			"remove"  => Remove,
-			_ => None,
-		})
+            "list" => List,
+            "add" => Add,
+            "start" => Started,
+            "resolve" => Resolve,
+            "remove" => Remove,
+            _ => None,
+        })
     }
 }
 
 fn main() {
     let mut command = Command::List;
     let mut arg = "".to_owned();
-    let mut deadline : Option<VagueTime> = None;
-    let mut priority : u8 = 0;
+    let mut deadline: Option<VagueTime> = None;
+    let mut priority: u8 = 0;
     {
         let mut ap = ArgumentParser::new();
         //ap.set_name(name);
         ap.set_description(
-"Something to help me organise\nSupports commands:
+            "Something to help me organise\nSupports commands:
 list\n - add \"Text of task\"\n - start taskname
  - \nresolve taskname\n - remove taskname
 
 Supports setting deadlines which can be of the form
 tommorow, today, tonight, evening, nextweek, or a day of this month as a single
-number");
+number",
+        );
         ap.refer(&mut command)
             .add_argument("command", Store, "Command to run");
         ap.refer(&mut arg)
@@ -117,13 +116,13 @@ number");
         ap.parse_args_or_exit();
     }
 
-	match command {
-		Command::List => {
-			do_list();
-		}
-		Command::Add => {
-			do_add(arg, priority, deadline);
-		}
+    match command {
+        Command::List => {
+            do_list();
+        }
+        Command::Add => {
+            do_add(arg, priority, deadline);
+        }
         Command::Started => {
             do_set_progress(&arg, Status::Started);
         }
@@ -133,28 +132,31 @@ number");
         Command::Remove => {
             do_remove(&arg);
         }
-		_ => {
-			println!("Unrecognised argument, try todo --help");
-		}
-	}
+        _ => {
+            println!("Unrecognised argument, try todo --help");
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize)]
 struct Data {
-    entries : Vec<Entry>,
-    last_updated : DateTime<Local>
+    entries: Vec<Entry>,
+    last_updated: DateTime<Local>,
 }
 
 impl Data {
     fn new() -> Self {
-        Data {entries : Vec::new(), last_updated : Local::now()}
+        Data {
+            entries: Vec::new(),
+            last_updated: Local::now(),
+        }
     }
 
-    fn add_entry(&mut self, entry : Entry) {
+    fn add_entry(&mut self, entry: Entry) {
         self.entries.push(entry);
     }
 
-    fn find_entry<'t> (&'t self, id : &str) -> Option<&'t Entry> {
+    fn find_entry<'t>(&'t self, id: &str) -> Option<&'t Entry> {
         for x in &self.entries {
             if x.id == id {
                 return Some(x);
@@ -163,7 +165,7 @@ impl Data {
         None
     }
 
-    fn find_entry_mut<'t> (&'t mut self, id : &str) -> Option<&'t mut Entry> {
+    fn find_entry_mut<'t>(&'t mut self, id: &str) -> Option<&'t mut Entry> {
         for x in &mut self.entries {
             if x.id == id {
                 return Some(x);
@@ -172,7 +174,7 @@ impl Data {
         None
     }
 
-    fn remove_by_id(&mut self, id : &str) {
+    fn remove_by_id(&mut self, id: &str) {
         self.entries.retain(|x| &x.id != id);
     }
 
@@ -202,17 +204,25 @@ impl Status {
             Resolved => false,
         }
     }
-    fn to_colored(&self, urgent : &bool) -> ColoredString {
+    fn to_colored(&self, urgent: &bool) -> ColoredString {
         use Status::*;
         match self {
-            NotStarted => { 
+            NotStarted => {
                 let base = "Not Started";
-                if *urgent {base.red()} else {base.dimmed()}
-            },
+                if *urgent {
+                    base.red()
+                } else {
+                    base.dimmed()
+                }
+            }
             Started => {
                 let base = "Started";
-                if *urgent {base.red()} else {base.yellow()}
-            },
+                if *urgent {
+                    base.red()
+                } else {
+                    base.yellow()
+                }
+            }
             Resolved => "Resolved".green(),
         }
     }
@@ -228,30 +238,29 @@ struct Entry {
 }
 
 impl Entry {
-    fn new(id : String, task : String, priority : u8, mb_deadline: Option<DateTime<Local>>) -> Self {
+    fn new(id: String, task: String, priority: u8, mb_deadline: Option<DateTime<Local>>) -> Self {
         Entry {
-            id : id,
-            task : task,
-            deadline : mb_deadline,
-            priority : priority,
-            status : Status::NotStarted,
+            id: id,
+            task: task,
+            deadline: mb_deadline,
+            priority: priority,
+            status: Status::NotStarted,
         }
     }
 
     fn format(&self) -> String {
         let deadline_urgent = match self.deadline {
             Some(x) => x.date() <= Local::now().date(),
-            _ => false
+            _ => false,
         };
         let status_urgent = self.status.is_urgent();
         let urgent = deadline_urgent && status_urgent;
         let deadline_str = match self.deadline {
             Some(deadline) => {
                 let str = format!("{}", deadline.format("\n\t Deadline: %d-%m %H:%M")).to_owned();
-                if (urgent) {
+                if urgent {
                     str.red()
-                }
-                else {
+                } else {
                     str.dimmed()
                 }
             }
@@ -260,20 +269,26 @@ impl Entry {
 
         let priority_str = if self.priority > 0 {
             format!("Priority: {}", self.priority).to_owned()
-        }
-        else {
+        } else {
             "".to_owned()
         };
 
         let status_str = self.status.to_colored(&urgent);
 
-        format!("Task: {} {} | {} | {} {}", self.id, priority_str, self.task.bold(), status_str, deadline_str)
+        format!(
+            "Task: {} {} | {} | {} {}",
+            self.id,
+            priority_str,
+            self.task.bold(),
+            status_str,
+            deadline_str
+        )
     }
 }
 
-const DATA_FOLDER : &'static str = ".todo.d";
-const DATA_FILENAME : &'static str = "data.json";
-const NOUNS_FILENAME : &'static str = "nouns.txt";
+const DATA_FOLDER: &'static str = ".todo.d";
+const DATA_FILENAME: &'static str = "data.json";
+const NOUNS_FILENAME: &'static str = "nouns.txt";
 
 fn data_folder() -> PathBuf {
     match env::home_dir() {
@@ -325,7 +340,7 @@ fn load_nouns() -> IOResult<Vec<String>> {
     f.lines().collect()
 }
 
-fn save_data(data : &Data) -> Result<(), serde_json::Error> {
+fn save_data(data: &Data) -> Result<(), serde_json::Error> {
     let j = serde_json::to_string(data)?;
     let filename = data_path();
 
@@ -345,7 +360,7 @@ fn do_list() {
     data.print();
 }
 
-fn concretise_time(vt : &VagueTime) -> DateTime<Local> {
+fn concretise_time(vt: &VagueTime) -> DateTime<Local> {
     use VagueTime::*;
     let t0 = Local::now();
     match vt {
@@ -353,11 +368,14 @@ fn concretise_time(vt : &VagueTime) -> DateTime<Local> {
         Today => Local::today().and_hms(23, 30, 0),
         Evening => Local::today().and_hms(23, 00, 0),
         NextWeek => t0 + Duration::days(7),
-        Day(d) => Local::today().with_day(u32::from(d.clone())).unwrap().and_hms(15,00,0),
+        Day(d) => Local::today()
+            .with_day(u32::from(d.clone()))
+            .unwrap()
+            .and_hms(15, 00, 0),
     }
 }
 
-fn pick_name(data : &Data) -> String {
+fn pick_name(data: &Data) -> String {
     // TODO error handle
     let nouns = load_nouns().unwrap();
     let mut noun = "";
@@ -371,10 +389,10 @@ fn pick_name(data : &Data) -> String {
     noun.to_owned()
 }
 
-fn do_add(task : String, priority : u8, deadline_vague : Option<VagueTime>) {
+fn do_add(task: String, priority: u8, deadline_vague: Option<VagueTime>) {
     let mut data = load_data_catch();
     let id = pick_name(&data);
-	println!("Adding {} - '{}'", id, task);
+    println!("Adding {} - '{}'", id, task);
     let deadline = deadline_vague.as_ref().map(concretise_time);
     let new_entry = Entry::new(id, task, priority, deadline);
     data.add_entry(new_entry);
@@ -382,7 +400,7 @@ fn do_add(task : String, priority : u8, deadline_vague : Option<VagueTime>) {
     save_data(&data).unwrap();
 }
 
-fn do_set_progress(id : &str, progress : Status) {
+fn do_set_progress(id: &str, progress: Status) {
     println!("Resolving '{}'", id);
     let mut data = load_data_catch();
     {
@@ -401,7 +419,7 @@ fn do_set_progress(id : &str, progress : Status) {
     save_data(&data).unwrap();
 }
 
-fn do_remove(id : &str) {
+fn do_remove(id: &str) {
     println!("Removing '{}'", id);
     let mut data = load_data_catch();
     data.remove_by_id(id);
